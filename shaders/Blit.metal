@@ -27,8 +27,12 @@ vertex BlitVertex blit_vertex(uint vid [[vertex_id]]) {
     return out;
 }
 
-fragment float4 blit_fragment(BlitVertex          in  [[stage_in]],
-                               texture2d<float>   tex [[texture(0)]]) {
-    constexpr sampler s(filter::nearest, address::clamp_to_edge);
-    return tex.sample(s, in.uv);
+fragment float4 blit_fragment(BlitVertex         in    [[stage_in]],
+                               texture2d<float>  tex   [[texture(0)]],
+                               texture2d<float>  bloom [[texture(1)]]) {
+    constexpr sampler s_near(filter::nearest, address::clamp_to_edge);
+    constexpr sampler s_lin (filter::linear,  address::clamp_to_edge);
+    float4 base = tex.sample(s_near, in.uv);
+    float4 glow = bloom.sample(s_lin, in.uv);  // bilinear upsample from half-res
+    return float4(base.rgb + glow.rgb * 2.0f, 1.0f);
 }

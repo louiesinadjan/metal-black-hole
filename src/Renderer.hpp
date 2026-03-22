@@ -19,12 +19,17 @@ private:
 
     MTL::Device*               device_;
     MTL::CommandQueue*         command_queue_;
-    MTL::ComputePipelineState* compute_pipeline_ = nullptr;
-    MTL::ComputePipelineState* accum_pipeline_   = nullptr;
-    MTL::RenderPipelineState*  render_pipeline_  = nullptr;
-    MTL::Texture*              render_texture_   = nullptr;
-    MTL::Texture*              accum_texture_    = nullptr;
-    MTL::Buffer*               camera_buffer_    = nullptr;
+    MTL::ComputePipelineState* compute_pipeline_          = nullptr;
+    MTL::ComputePipelineState* accum_pipeline_            = nullptr;
+    MTL::ComputePipelineState* bloom_threshold_pipeline_  = nullptr;
+    MTL::ComputePipelineState* bloom_blur_h_pipeline_     = nullptr;
+    MTL::ComputePipelineState* bloom_blur_v_pipeline_     = nullptr;
+    MTL::RenderPipelineState*  render_pipeline_           = nullptr;
+    MTL::Texture*              render_texture_            = nullptr;
+    MTL::Texture*              accum_texture_             = nullptr;
+    MTL::Texture*              bloom_a_texture_           = nullptr;
+    MTL::Texture*              bloom_b_texture_           = nullptr;
+    MTL::Buffer*               camera_buffer_             = nullptr;
 
     uint32_t frame_count_ = 0;
 
