@@ -61,16 +61,44 @@ static float4 skyColor(float3 dir) {
                   1.0f);
 }
 
+// Turbulence noise — bilinear value noise + 4-octave fbm
+// Used to modulate disk brightness with MHD-like density fluctuations.
+
+static float noise2(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float2 u = f * f * (3.0f - 2.0f * f);  // smoothstep
+    return mix(mix(star_hash(i),                star_hash(i + float2(1, 0)), u.x),
+               mix(star_hash(i + float2(0, 1)), star_hash(i + float2(1, 1)), u.x), u.y);
+}
+
+static float disk_fbm(float2 p) {
+    float v = 0.0f, a = 0.5f;
+    for (int i = 0; i < 4; ++i) {
+        v += a * noise2(p);
+        p  = p * 2.1f + float2(1.7f, 9.2f);  // offset avoids lattice alignment
+        a *= 0.5f;
+    }
+    return v;  // ≈ [0, 1]
+}
+
 // Accretion disk color
 
-static float4 diskColor(float r) {
+static float4 diskColor(float r, float3 pos3D) {
     // Temperature gradient: white-yellow near ISCO, orange-red at outer edge
     float t           = saturate((r - R_ISCO) / (R_DISK_OUTER - R_ISCO));
     float3 innerColor = float3(1.0f, 0.95f, 0.7f);
     float3 outerColor = float3(0.8f, 0.15f, 0.02f);
     float3 col        = mix(innerColor, outerColor, sqrt(t));
     float  brightness = 2.0f / (t * 5.0f + 0.3f);   // brighter toward ISCO
-    return float4(col * brightness, 1.0f);
+
+    // Turbulent modulation — static pattern in polar coordinates
+    float  phi        = atan2(pos3D.z, pos3D.x);                     // azimuth [-π, π]
+    float2 disk_uv    = float2(r * 0.25f, phi / M_PI_F);
+    float  turb       = disk_fbm(disk_uv);
+    float  turb_scale = 0.35f + 1.3f * turb;  // [0.35, 1.65] — ±65% brightness swing
+
+    return float4(col * brightness * turb_scale, 1.0f);
 }
 
 // Geodesic integrator 
@@ -154,7 +182,7 @@ static float4 traceRay(float3 rayOrigin, float3 rayDir) {
 
             // Observed bolometric flux ∝ g^4  (beaming g³ · energy shift g¹)
             float g = doppler * grav;
-            float4 color = diskColor(r);
+            float4 color = diskColor(r, pos3D);
             color.rgb *= pow(g, 4.0f);
             return color;
         }
