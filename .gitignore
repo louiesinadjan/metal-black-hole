@@ -1,8 +1,5 @@
-# Build output
+.cache/
 build/
-
-# macOS
 .DS_Store
-
-# VSCode
 .vscode/settings.json
+CLAUDE.md
