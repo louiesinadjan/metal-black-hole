@@ -128,8 +128,28 @@ static float4 traceRay(float3 rayOrigin, float3 rayDir) {
         float3 pos3D = r * (cos(phi)*e1 + sin(phi)*e2);
         float  curY  = pos3D.y;
 
-        if (prevY * curY < 0.0f && r > R_ISCO && r < R_DISK_OUTER)
-            return diskColor(r);
+        if (prevY * curY < 0.0f && r > R_ISCO && r < R_DISK_OUTER) {
+            // Prograde circular orbit direction in the equatorial plane
+            float3 orb_dir = normalize(float3(-pos3D.z, 0.0f, pos3D.x));
+            // Direction from disk point to observer (rayOrigin = camera position)
+            float3 to_obs  = normalize(rayOrigin - pos3D);
+
+            // Keplerian orbital speed: β = √(M/r)  (natural units, c = 1)
+            float beta  = min(sqrt(M / r), 0.95f);
+            float gam   = 1.0f / sqrt(1.0f - beta * beta);
+
+            // Special-relativistic Doppler: D = 1 / (γ(1 − β cosα))
+            float doppler = 1.0f / (gam * (1.0f - beta * dot(orb_dir, to_obs)));
+
+            // Gravitational redshift: g_grav = √(1 − RS/r)
+            float grav = sqrt(max(0.0f, 1.0f - RS / r));
+
+            // Observed bolometric flux ∝ g^4  (beaming g³ · energy shift g¹)
+            float g = doppler * grav;
+            float4 color = diskColor(r);
+            color.rgb *= pow(g, 4.0f);
+            return color;
+        }
 
         prevY = curY;
     }
