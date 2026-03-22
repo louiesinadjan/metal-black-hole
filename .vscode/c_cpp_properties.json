@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "${default}",
+                "${workspaceFolder}/metal-cpp/AppKit",
+                "${workspaceFolder}/metal-cpp/Metal",
+                "${workspaceFolder}/metal-cpp/MetalKit",
+                "${workspaceFolder}/metal-cpp"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "macos-clang-arm64",
+            "compileCommands": "${workspaceFolder}/.vscode/compile_commands.json"
+        }
+    ],
+    "version": 4
+}

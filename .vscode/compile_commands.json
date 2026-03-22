@@ -1,0 +1,12 @@
+[
+  {
+    "directory": "/Users/louiesinadjan/Documents/code/metal-black-hole",
+    "command": "clang++ -std=c++17 -O3 -Wall -Wextra -I metal-cpp -I metal-cpp-extensions -I . -c src/main.cpp -o build/main.o",
+    "file": "src/main.cpp"
+  },
+  {
+    "directory": "/Users/louiesinadjan/Documents/code/metal-black-hole",
+    "command": "clang++ -std=c++17 -O3 -Wall -Wextra -I metal-cpp -I metal-cpp-extensions -I . -c src/Renderer.cpp -o build/Renderer.o",
+    "file": "src/Renderer.cpp"
+  }
+]
