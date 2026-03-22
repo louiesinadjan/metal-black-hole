@@ -18,5 +18,5 @@ struct CameraData {
     vec4 position;  // .xyz = world-space position,    .w = unused
     vec4 forward;   // .xyz = forward direction,        .w = vertical FoV (radians)
     vec4 right;     // .xyz = right direction,          .w = aspect ratio (width/height)
-    vec4 up;        // .xyz = up direction,             .w = unused
+    vec4 up;        // .xyz = up direction,             .w = frame count (TAA jitter)
 };

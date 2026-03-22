@@ -38,10 +38,25 @@ The $g^4$ scaling follows from relativistic beaming ($g^3$ compresses the solid 
 
 ## Rendering Architecture
 
-Two GPU passes per frame, encoded into one command buffer:
+Three GPU passes per frame, encoded into one command buffer:
 
 1. **Compute pass** — `raytrace` kernel writes pixels into an RGBA16Float texture (GPU-private)
-2. **Render pass** — `blit_vertex` / `blit_fragment` draw a full-screen triangle, sampling the compute texture into the MTKView drawable
+2. **Accumulate pass** — `accumulate` kernel blends the new frame into an RGBA32Float accumulation texture
+3. **Render pass** — `blit_vertex` / `blit_fragment` draw a full-screen triangle, sampling the accumulation texture into the MTKView drawable
+
+### Temporal anti-aliasing
+
+The renderer is fully deterministic, so naively accumulating identical frames does nothing. Instead, each frame applies a subpixel **Halton jitter** before casting rays:
+
+$$\text{uv} = \frac{\text{pixel} + 0.5 + \bigl(h_2(n) - 0.5,\ h_3(n) - 0.5\bigr)}{resolution}$$
+
+where $h_b(n)$ is the $n$-th term of the base-$b$ Halton low-discrepancy sequence. Bases 2 and 3 are coprime, so successive jitters cover the unit pixel cell without repetition or clustering.
+
+The accumulation kernel maintains a running average:
+
+$$A_n = A_{n-1} + \frac{1}{\min(n, 512)}\,(F_n - A_{n-1})$$
+
+This is a true running mean for the first 512 frames, then transitions to an exponential moving average. The result is that edges on the photon ring, disk boundary, and star field sharpen progressively while the camera is still. Dragging the camera resets $n$ to zero, discarding the stale history and eliminating ghosting.
 
 ## Build & Run
 
@@ -60,11 +75,12 @@ Always run from the project root — the binary loads `build/Shaders.metallib` v
 ```
 src/
   main.cpp          NS::Application setup, AppDelegate, MTKViewDelegate
-  Renderer.hpp/cpp  owns all Metal state; called once per frame
-  ShaderTypes.h     structs shared between C++ and Metal
+  renderer.hpp/cpp  owns all Metal state; called once per frame
+  shader_types.h    structs shared between C++ and Metal
 shaders/
-  Raytrace.metal    compute kernel: geodesic integrator, one thread per pixel
-  Blit.metal        vertex + fragment shaders: full-screen triangle
+  raytrace.metal    compute kernel: geodesic integrator, one thread per pixel
+  accumulate.metal  compute kernel: TAA running-average blend
+  blit.metal        vertex + fragment shaders: full-screen triangle
 metal-cpp/          Apple's header-only C++ bindings for Metal
 ```
 

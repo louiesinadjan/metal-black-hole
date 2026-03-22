@@ -14,9 +14,11 @@ Renderer::Renderer(MTL::Device* device)
 }
 
 Renderer::~Renderer() {
-    if (camera_buffer_)   camera_buffer_->release();
-    if (render_texture_)  render_texture_->release();
-    if (render_pipeline_) render_pipeline_->release();
+    if (camera_buffer_)    camera_buffer_->release();
+    if (accum_texture_)    accum_texture_->release();
+    if (render_texture_)   render_texture_->release();
+    if (render_pipeline_)  render_pipeline_->release();
+    if (accum_pipeline_)   accum_pipeline_->release();
     if (compute_pipeline_) compute_pipeline_->release();
     command_queue_->release();
     device_->release();
@@ -45,6 +47,15 @@ void Renderer::build_pipelines() {
         exit(1);
     }
 
+    // Compute pipeline: accumulate kernel
+    auto* accum_fn = library->newFunction(NS::String::string("accumulate", NS::StringEncoding::UTF8StringEncoding));
+    accum_pipeline_ = device_->newComputePipelineState(accum_fn, &error);
+    accum_fn->release();
+    if (!accum_pipeline_) {
+        fprintf(stderr, "Failed to build accumulate pipeline: %s\n", error->localizedDescription()->utf8String());
+        exit(1);
+    }
+
     // Render pipeline: blit compute texture → screen
     auto* vert_fn = library->newFunction(NS::String::string("blit_vertex",   NS::StringEncoding::UTF8StringEncoding));
     auto* frag_fn = library->newFunction(NS::String::string("blit_fragment", NS::StringEncoding::UTF8StringEncoding));
@@ -68,15 +79,24 @@ void Renderer::build_pipelines() {
 
 void Renderer::build_texture(uint32_t width, uint32_t height) {
     if (render_texture_) render_texture_->release();
+    if (accum_texture_)  accum_texture_->release();
 
     auto* desc = MTL::TextureDescriptor::texture2DDescriptor(
         MTL::PixelFormatRGBA16Float, width, height, false);
     desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
     desc->setStorageMode(MTL::StorageModePrivate);
+    render_texture_ = device_->newTexture(desc);
 
-    render_texture_  = device_->newTexture(desc);
-    texture_width_   = width;
-    texture_height_  = height;
+    // Accumulation buffer: RGBA32Float for precision over many blended frames
+    auto* accum_desc = MTL::TextureDescriptor::texture2DDescriptor(
+        MTL::PixelFormatRGBA32Float, width, height, false);
+    accum_desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+    accum_desc->setStorageMode(MTL::StorageModePrivate);
+    accum_texture_ = device_->newTexture(accum_desc);
+
+    texture_width_  = width;
+    texture_height_ = height;
+    frame_count_    = 0;  // resize resets accumulation
 }
 
 void Renderer::build_camera_buffer(uint32_t width, uint32_t height) {
@@ -110,6 +130,8 @@ void Renderer::update_orbit(float dx, float dy) {
     constexpr float k_elev_min = -(float)M_PI / 2.0f + 0.05f;
     constexpr float k_elev_max =  (float)M_PI / 2.0f - 0.05f;
 
+    frame_count_ = 0;  // camera moved — discard accumulated frames
+
     azimuth_   += dx * k_sens;
     elevation_ -= dy * k_sens;
     elevation_  = std::clamp(elevation_, k_elev_min, k_elev_max);
@@ -133,9 +155,14 @@ void Renderer::draw(MTK::View* view) {
         build_camera_buffer(w, h);
     }
 
+    // Advance frame counter and write it into camera.up.w for the jitter
+    ++frame_count_;
+    static_cast<CameraData*>(camera_buffer_->contents())->up.w =
+        static_cast<float>(frame_count_);
+
     auto* cmd = command_queue_->commandBuffer();
 
-    // Compute pass: raytrace into render_texture_
+    // Compute pass: raytrace jittered frame into render_texture_
     {
         auto* enc = cmd->computeCommandEncoder();
         enc->setComputePipelineState(compute_pipeline_);
@@ -148,12 +175,26 @@ void Renderer::draw(MTK::View* view) {
         enc->endEncoding();
     }
 
-    // Render pass: blit render_texture_ to the drawable
+    // Compute pass: accumulate render_texture_ into accum_texture_
+    {
+        auto* enc = cmd->computeCommandEncoder();
+        enc->setComputePipelineState(accum_pipeline_);
+        enc->setTexture(render_texture_, 0);   // new_frame  (read)
+        enc->setTexture(accum_texture_,  1);   // accum      (read_write)
+        enc->setBytes(&frame_count_, sizeof(uint32_t), 0);
+
+        MTL::Size threadgroup { 16, 16, 1 };
+        MTL::Size grid        { w,  h,  1 };
+        enc->dispatchThreads(grid, threadgroup);
+        enc->endEncoding();
+    }
+
+    // Render pass: blit accum_texture_ to the drawable
     {
         auto* rpd = view->currentRenderPassDescriptor();
         auto* enc = cmd->renderCommandEncoder(rpd);
         enc->setRenderPipelineState(render_pipeline_);
-        enc->setFragmentTexture(render_texture_, 0);
+        enc->setFragmentTexture(accum_texture_, 0);
         enc->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
         enc->endEncoding();
     }

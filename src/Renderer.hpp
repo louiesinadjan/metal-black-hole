@@ -20,9 +20,13 @@ private:
     MTL::Device*               device_;
     MTL::CommandQueue*         command_queue_;
     MTL::ComputePipelineState* compute_pipeline_ = nullptr;
+    MTL::ComputePipelineState* accum_pipeline_   = nullptr;
     MTL::RenderPipelineState*  render_pipeline_  = nullptr;
     MTL::Texture*              render_texture_   = nullptr;
+    MTL::Texture*              accum_texture_    = nullptr;
     MTL::Buffer*               camera_buffer_    = nullptr;
+
+    uint32_t frame_count_ = 0;
 
     uint32_t texture_width_  = 0;
     uint32_t texture_height_ = 0;

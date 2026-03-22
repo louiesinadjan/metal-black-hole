@@ -19,7 +19,15 @@
 
 using namespace metal;
 
-// Constants 
+// Halton low-discrepancy sequence (base 2 and base 3 for xy jitter)
+
+static float halton(uint i, uint base) {
+    float f = 1.0f, r = 0.0f;
+    while (i > 0) { f /= float(base); r += f * float(i % base); i /= base; }
+    return r;
+}
+
+// Constants
 
 constant float RS            = 1.0;          // Schwarzschild radius
 constant float M             = RS / 2.0;     // Mass  (RS = 2GM/c², G=c=1)
@@ -168,9 +176,11 @@ kernel void raytrace(texture2d<float, access::write> outTexture [[texture(0)]],
     uint h = outTexture.get_height();
     if (gid.x >= w || gid.y >= h) return;
 
-    // NDC in [-1, 1], y pointing up
-    float2 uv = (float2(gid) + 0.5f) / float2(w, h);
-    uv        = uv * 2.0f - 1.0f;
+    // NDC in [-1, 1], y pointing up; subpixel jitter for TAA
+    uint   frame  = uint(camera.up.w);
+    float2 jitter = float2(halton(frame, 2), halton(frame, 3)) - 0.5f;
+    float2 uv     = (float2(gid) + 0.5f + jitter) / float2(w, h);
+    uv            = uv * 2.0f - 1.0f;
     uv.y      = -uv.y;   // flip: gid.y=0 is top of texture
 
     // Perspective ray from camera
