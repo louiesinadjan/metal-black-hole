@@ -32,6 +32,12 @@ public:
         input_->consume_delta(dx, dy);
         if (dx != 0.0f || dy != 0.0f)
             renderer_->update_orbit(dx, dy);
+
+        float dz = 0.0f;
+        input_->consume_scroll(dz);
+        if (dz != 0.0f)
+            renderer_->update_zoom(dz);
+
         renderer_->draw(view);
     }
 

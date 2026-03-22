@@ -38,7 +38,7 @@ Renderer::~Renderer() {
 void Renderer::build_pipelines() {
     NS::Error* error = nullptr;
 
-    auto* lib_path = NS::String::string("build/Shaders.metallib", NS::StringEncoding::UTF8StringEncoding);
+    auto* lib_path = NS::String::string("build/shaders.metallib", NS::StringEncoding::UTF8StringEncoding);
     auto* lib_url = NS::URL::fileURLWithPath(lib_path);
     auto* library = device_->newLibrary(lib_url, &error);
     if (!library) {
@@ -166,6 +166,17 @@ void Renderer::build_camera_buffer(uint32_t width, uint32_t height) {
     cam->forward = {forward.x, forward.y, forward.z, fov};
     cam->right = {right.x, right.y, right.z, aspect_ratio};
     cam->up = {up.x, up.y, up.z, 0.0f};
+}
+
+void Renderer::update_zoom(float dz) {
+    constexpr float k_sens    = 0.3f;
+    constexpr float k_min_r   = 2.0f;   // don't go inside the photon sphere
+    constexpr float k_max_r   = 60.0f;
+
+    if (dz == 0.0f) return;
+    frame_count_ = 0;
+    radius_ = std::clamp(radius_ + dz * k_sens, k_min_r, k_max_r);
+    build_camera_buffer(texture_width_, texture_height_);
 }
 
 void Renderer::update_orbit(float dx, float dy) {

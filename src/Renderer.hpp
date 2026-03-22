@@ -11,6 +11,7 @@ public:
 
     void draw(MTK::View* view);
     void update_orbit(float dx, float dy);
+    void update_zoom(float dz);
 
 private:
     void build_pipelines();

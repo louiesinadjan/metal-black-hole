@@ -63,12 +63,12 @@ This is a true running mean for the first 512 frames, then transitions to an exp
 Requires macOS with Xcode command line tools.
 
 ```bash
-make        # compile shaders → build/Shaders.metallib, compile C++ → build/BlackHole
+make        # compile shaders → build/shaders.metallib, compile C++ → build/black_hole
 make run    # build + launch
 make clean  # remove build/
 ```
 
-Always run from the project root — the binary loads `build/Shaders.metallib` via a relative path.
+Always run from the project root — the binary loads `build/shaders.metallib` via a relative path.
 
 ## Project Structure
 

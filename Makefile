@@ -17,10 +17,10 @@ METAL_AIRS = $(patsubst $(SHADERS)/%.metal, $(BUILD)/%.air, $(METAL_SRCS))
 
 .PHONY: all clean run
 
-all: $(BUILD) $(BUILD)/BlackHole $(BUILD)/Shaders.metallib
+all: $(BUILD) $(BUILD)/black_hole $(BUILD)/shaders.metallib
 
 run: all
-	./$(BUILD)/BlackHole
+	./$(BUILD)/black_hole
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -30,7 +30,7 @@ $(BUILD)/%.air: $(SHADERS)/%.metal | $(BUILD)
 	xcrun -sdk macosx metal -O3 -I . -c $< -o $@
 
 # Link all .air files into a single .metallib
-$(BUILD)/Shaders.metallib: $(METAL_AIRS)
+$(BUILD)/shaders.metallib: $(METAL_AIRS)
 	xcrun -sdk macosx metallib $^ -o $@
 
 # Compile C++ sources
@@ -42,7 +42,7 @@ $(BUILD)/%.o: $(SRC)/%.mm | $(BUILD)
 	$(CXX) $(CXXFLAGS) -fobjc-arc -c $< -o $@
 
 # Link final binary
-$(BUILD)/BlackHole: $(OBJS)
+$(BUILD)/black_hole: $(OBJS)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
 clean:
