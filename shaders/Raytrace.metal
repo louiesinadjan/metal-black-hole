@@ -15,7 +15,7 @@
 //
 
 #include <metal_stdlib>
-#include "src/ShaderTypes.h"
+#include "src/shader_types.h"
 
 using namespace metal;
 
@@ -26,15 +26,30 @@ constant float M             = RS / 2.0;     // Mass  (RS = 2GM/c², G=c=1)
 constant float R_ISCO        = 3.0 * RS;     // Innermost stable circular orbit
 constant float R_DISK_OUTER  = 12.0 * RS;    // Outer edge of accretion disk
 
-// Background sky 
+// Background sky + stars
+
+static float star_hash(float2 p) {
+    return fract(sin(dot(p, float2(127.1f, 311.7f))) * 43758.5453f);
+}
 
 static float4 skyColor(float3 dir) {
-    // Simple dark space gradient; faint blue tint above the disk plane
-    float up    = max(0.0f, dir.y) * 0.2f;
-    float side  = length(dir.xz) * 0.03f;
-    return float4(0.01f + side,
-                  0.01f + side,
-                  0.04f + up,
+    // Spherical UV from escape direction
+    float phi   = atan2(dir.x, dir.z);             // azimuth  [-π, π]
+    float theta = asin(clamp(dir.y, -1.0f, 1.0f)); // elevation [-π/2, π/2]
+    float2 uv   = float2(phi / (2.0f * M_PI_F) + 0.5f,
+                         theta / M_PI_F + 0.5f);
+
+    // Procedural star field: grid of cells, one potential star per cell
+    float2 cell  = floor(uv * 256.0f);
+    float2 local = fract(uv * 256.0f) - 0.5f;
+    float  rng   = star_hash(cell);
+    float  star  = (rng > 0.994f) ? max(0.0f, 1.0f - length(local) * 8.0f) : 0.0f;
+    star *= star_hash(cell + 0.5f) * 1.5f + 0.5f;  // vary brightness
+
+    float up = max(0.0f, dir.y) * 0.1f;
+    return float4(0.005f + star,
+                  0.005f + star,
+                  0.02f  + star + up,
                   1.0f);
 }
 

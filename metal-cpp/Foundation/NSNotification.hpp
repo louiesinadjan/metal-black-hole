@@ -30,38 +30,27 @@
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-namespace NS
-{
+namespace NS {
 using NotificationName = class String*;
 
-class Notification : public NS::Referencing<Notification>
-{
+class Notification : public NS::Referencing<Notification> {
 public:
-    NS::String*     name() const;
-    NS::Object*     object() const;
+    NS::String* name() const;
+    NS::Object* object() const;
     NS::Dictionary* userInfo() const;
 };
-}
+} // namespace NS
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_NS_INLINE NS::String* NS::Notification::name() const
-{
-    return Object::sendMessage<NS::String*>(this, _NS_PRIVATE_SEL(name));
-}
+_NS_INLINE NS::String* NS::Notification::name() const { return Object::sendMessage<NS::String*>(this, _NS_PRIVATE_SEL(name)); }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_NS_INLINE NS::Object* NS::Notification::object() const
-{
-    return Object::sendMessage<NS::Object*>(this, _NS_PRIVATE_SEL(object));
-}
+_NS_INLINE NS::Object* NS::Notification::object() const { return Object::sendMessage<NS::Object*>(this, _NS_PRIVATE_SEL(object)); }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_NS_INLINE NS::Dictionary* NS::Notification::userInfo() const
-{
-    return Object::sendMessage<NS::Dictionary*>(this, _NS_PRIVATE_SEL(userInfo));
-}
+_NS_INLINE NS::Dictionary* NS::Notification::userInfo() const { return Object::sendMessage<NS::Dictionary*>(this, _NS_PRIVATE_SEL(userInfo)); }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------

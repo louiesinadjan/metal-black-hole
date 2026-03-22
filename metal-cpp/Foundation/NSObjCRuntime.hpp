@@ -27,10 +27,9 @@
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-namespace NS
-{
+namespace NS {
 
-_NS_ENUM(Integer, ComparisonResult) {
+_NS_ENUM(Integer, ComparisonResult){
     OrderedAscending = -1,
     OrderedSame = 0,
     OrderedDescending = 1,
@@ -38,6 +37,6 @@ _NS_ENUM(Integer, ComparisonResult) {
 
 const Integer NotFound = IntegerMax;
 
-}
+} // namespace NS
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------

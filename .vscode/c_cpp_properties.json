@@ -14,7 +14,12 @@
             "cStandard": "c17",
             "cppStandard": "c++17",
             "intelliSenseMode": "macos-clang-arm64",
-            "compileCommands": "${workspaceFolder}/.vscode/compile_commands.json"
+            "compilerArgs": [
+                "-I", "${workspaceFolder}/metal-cpp",
+                "-I", "${workspaceFolder}/metal-cpp-extensions",
+                "-I", "${workspaceFolder}"
+            ],
+            "compileCommands": "${workspaceFolder}/compile_commands.json"
         }
     ],
     "version": 4

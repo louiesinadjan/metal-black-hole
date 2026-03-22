@@ -10,19 +10,24 @@ public:
     ~Renderer();
 
     void draw(MTK::View* view);
+    void update_orbit(float dx, float dy);
 
 private:
-    void buildPipelines();
-    void buildTexture(uint32_t width, uint32_t height);
-    void buildCameraBuffer(uint32_t width, uint32_t height);
+    void build_pipelines();
+    void build_texture(uint32_t width, uint32_t height);
+    void build_camera_buffer(uint32_t width, uint32_t height);
 
-    MTL::Device*               _device;
-    MTL::CommandQueue*         _commandQueue;
-    MTL::ComputePipelineState* _computePipeline = nullptr;
-    MTL::RenderPipelineState*  _renderPipeline  = nullptr;
-    MTL::Texture*              _renderTexture   = nullptr;
-    MTL::Buffer*               _cameraBuffer    = nullptr;
+    MTL::Device*               device_;
+    MTL::CommandQueue*         command_queue_;
+    MTL::ComputePipelineState* compute_pipeline_ = nullptr;
+    MTL::RenderPipelineState*  render_pipeline_  = nullptr;
+    MTL::Texture*              render_texture_   = nullptr;
+    MTL::Buffer*               camera_buffer_    = nullptr;
 
-    uint32_t _textureWidth  = 0;
-    uint32_t _textureHeight = 0;
+    uint32_t texture_width_  = 0;
+    uint32_t texture_height_ = 0;
+
+    float azimuth_   = 0.0f;
+    float elevation_ = 0.1974f;  // asin(3 / sqrt(234)), matches initial position {0,3,-15}
+    float radius_    = 15.2971f; // sqrt(0² + 3² + 15²)
 };

@@ -47,9 +47,9 @@
 #define _CA_PRIVATE_DEF_CLS(symbol) void* s_k##symbol _CA_PRIVATE_VISIBILITY = _CA_PRIVATE_OBJC_LOOKUP_CLASS(symbol);
 #define _CA_PRIVATE_DEF_PRO(symbol)
 #define _CA_PRIVATE_DEF_SEL(accessor, symbol) SEL s_k##accessor _CA_PRIVATE_VISIBILITY = sel_registerName(symbol);
-#define _CA_PRIVATE_DEF_STR(type, symbol)                \
-    _CA_EXTERN type const CA##symbol _CA_PRIVATE_IMPORT; \
-    type const                       CA::symbol = (nullptr != &CA##symbol) ? CA##symbol : nullptr;
+#define _CA_PRIVATE_DEF_STR(type, symbol)                                                                                                                                                              \
+    _CA_EXTERN type const CA##symbol _CA_PRIVATE_IMPORT;                                                                                                                                               \
+    type const CA::symbol = (nullptr != &CA##symbol) ? CA##symbol : nullptr;
 
 #else
 
@@ -62,48 +62,35 @@
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-namespace CA
-{
-namespace Private
-{
-    namespace Class
-    {
-
-    } // Class
-} // Private
-} // CA
+namespace CA {
+namespace Private {
+namespace Class {} // namespace Class
+} // namespace Private
+} // namespace CA
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-namespace CA
-{
-namespace Private
-{
-    namespace Protocol
-    {
+namespace CA {
+namespace Private {
+namespace Protocol {
 
-        _CA_PRIVATE_DEF_PRO(CAMetalDrawable);
+_CA_PRIVATE_DEF_PRO(CAMetalDrawable);
 
-    } // Protocol
-} // Private
-} // CA
+} // namespace Protocol
+} // namespace Private
+} // namespace CA
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-namespace CA
-{
-namespace Private
-{
-    namespace Selector
-    {
+namespace CA {
+namespace Private {
+namespace Selector {
 
-        _CA_PRIVATE_DEF_SEL(layer,
-            "layer");
-        _CA_PRIVATE_DEF_SEL(texture,
-            "texture");
+_CA_PRIVATE_DEF_SEL(layer, "layer");
+_CA_PRIVATE_DEF_SEL(texture, "texture");
 
-    } // Class
-} // Private
-} // CA
+} // namespace Selector
+} // namespace Private
+} // namespace CA
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------

@@ -26,9 +26,8 @@
 
 #include <Foundation/Foundation.hpp>
 
-namespace MTL
-{
-_MTL_ENUM(NS::UInteger, PixelFormat) {
+namespace MTL {
+_MTL_ENUM(NS::UInteger, PixelFormat){
     PixelFormatInvalid = 0,
     PixelFormatA8Unorm = 1,
     PixelFormatR8Unorm = 10,

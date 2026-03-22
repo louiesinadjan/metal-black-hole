@@ -30,8 +30,8 @@
 
 #define _NS_CONST(type, name) _NS_EXTERN type const name;
 #define _NS_ENUM(type, name) enum name : type
-#define _NS_OPTIONS(type, name) \
-    using name = type;          \
+#define _NS_OPTIONS(type, name)                                                                                                                                                                        \
+    using name = type;                                                                                                                                                                                 \
     enum : name
 
 #define _NS_CAST_TO_UINT(value) static_cast<NS::UInteger>(value)

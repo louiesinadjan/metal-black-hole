@@ -12,39 +12,46 @@
 #include <MetalKit/MetalKit.hpp>
 #include <AppKit/AppKit.hpp>
 
-#include "Renderer.hpp"
-
-// ── MTKViewDelegate ────────────────────────────────────────────────────────────
+#include "input_handler.h"
+#include "renderer.hpp"
 
 class ViewDelegate : public MTK::ViewDelegate {
 public:
     explicit ViewDelegate(MTL::Device* device)
-        : _renderer(new Renderer(device)) {}
+        : renderer_(new Renderer(device))
+        , input_(new InputHandler())
+    {}
 
-    ~ViewDelegate() override { delete _renderer; }
+    ~ViewDelegate() override {
+        delete input_;
+        delete renderer_;
+    }
 
     void drawInMTKView(MTK::View* view) override {
-        _renderer->draw(view);
+        float dx = 0.0f, dy = 0.0f;
+        input_->consume_delta(dx, dy);
+        if (dx != 0.0f || dy != 0.0f)
+            renderer_->update_orbit(dx, dy);
+        renderer_->draw(view);
     }
 
 private:
-    Renderer* _renderer;
+    Renderer*     renderer_;
+    InputHandler* input_;
 };
-
-// ── AppDelegate ────────────────────────────────────────────────────────────────
 
 class AppDelegate : public NS::ApplicationDelegate {
 public:
     ~AppDelegate() override {
-        delete _viewDelegate;
-        _window->release();
-        _device->release();
+        delete view_delegate_;
+        window_->release();
+        device_->release();
     }
 
     void applicationDidFinishLaunching(NS::Notification*) override {
         CGRect frame = { {100.0, 100.0}, {1280.0, 720.0} };
 
-        _window = NS::Window::alloc()->init(
+        window_ = NS::Window::alloc()->init(
             frame,
             NS::WindowStyleMaskClosable |
             NS::WindowStyleMaskTitled   |
@@ -52,21 +59,20 @@ public:
             NS::BackingStoreBuffered,
             false);
 
-        _device = MTL::CreateSystemDefaultDevice();
+        device_ = MTL::CreateSystemDefaultDevice();
 
-        auto* view = MTK::View::alloc()->init(frame, _device);
+        auto* view = MTK::View::alloc()->init(frame, device_);
         view->setColorPixelFormat(MTL::PixelFormatBGRA8Unorm_sRGB);
         view->setClearColor(MTL::ClearColor::Make(0.0, 0.0, 0.0, 1.0));
         view->setPaused(false);
         view->setEnableSetNeedsDisplay(false);
 
-        _viewDelegate = new ViewDelegate(_device);
-        view->setDelegate(_viewDelegate);
+        view_delegate_ = new ViewDelegate(device_);
+        view->setDelegate(view_delegate_);
 
-        _window->setContentView(view);
-        _window->setTitle(NS::String::string("Black Hole",
-                          NS::StringEncoding::UTF8StringEncoding));
-        _window->makeKeyAndOrderFront(nullptr);
+        window_->setContentView(view);
+        window_->setTitle(NS::String::string("Black Hole", NS::StringEncoding::UTF8StringEncoding));
+        window_->makeKeyAndOrderFront(nullptr);
 
         NS::Application::sharedApplication()->activateIgnoringOtherApps(true);
 
@@ -78,19 +84,19 @@ public:
     }
 
 private:
-    NS::Window*   _window       = nullptr;
-    MTL::Device*  _device       = nullptr;
-    ViewDelegate* _viewDelegate = nullptr;
+    NS::Window*    window_        = nullptr;
+    MTL::Device*   device_        = nullptr;
+    ViewDelegate*  view_delegate_ = nullptr;
 };
-
-// ── Entry point ────────────────────────────────────────────────────────────────
 
 int main() {
     NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
 
     AppDelegate delegate;
-    NS::Application::sharedApplication()->setDelegate(&delegate);
-    NS::Application::sharedApplication()->run();
+    auto* app = NS::Application::sharedApplication();
+    app->setActivationPolicy(NS::ActivationPolicyRegular);
+    app->setDelegate(&delegate);
+    app->run();
 
     pool->release();
     return 0;

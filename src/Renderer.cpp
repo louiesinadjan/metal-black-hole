@@ -1,112 +1,123 @@
-#include "Renderer.hpp"
-#include "ShaderTypes.h"
+#include "renderer.hpp"
+#include "shader_types.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <simd/simd.h>
 
 Renderer::Renderer(MTL::Device* device)
-    : _device(device->retain())
-    , _commandQueue(_device->newCommandQueue())
+    : device_(device->retain())
+    , command_queue_(device_->newCommandQueue())
 {
-    buildPipelines();
+    build_pipelines();
 }
 
 Renderer::~Renderer() {
-    if (_cameraBuffer)    _cameraBuffer->release();
-    if (_renderTexture)   _renderTexture->release();
-    if (_renderPipeline)  _renderPipeline->release();
-    if (_computePipeline) _computePipeline->release();
-    _commandQueue->release();
-    _device->release();
+    if (camera_buffer_)   camera_buffer_->release();
+    if (render_texture_)  render_texture_->release();
+    if (render_pipeline_) render_pipeline_->release();
+    if (compute_pipeline_) compute_pipeline_->release();
+    command_queue_->release();
+    device_->release();
 }
 
-void Renderer::buildPipelines() {
+void Renderer::build_pipelines() {
     NS::Error* error = nullptr;
 
-    // Load pre-compiled metallib (built via `make`)
-    auto* libPath = NS::String::string("build/Shaders.metallib",
-                                       NS::StringEncoding::UTF8StringEncoding);
-    auto* libURL  = NS::URL::fileURLWithPath(libPath);
-    auto* library = _device->newLibrary(libURL, &error);
+    auto* lib_path = NS::String::string("build/Shaders.metallib", NS::StringEncoding::UTF8StringEncoding);
+    auto* lib_url  = NS::URL::fileURLWithPath(lib_path);
+    auto* library  = device_->newLibrary(lib_url, &error);
     if (!library) {
-        fprintf(stderr, "Failed to load build/Shaders.metallib: %s\n"
-                        "Run `make` first and launch from the project root.\n",
+        fprintf(stderr,
+                "Failed to load build/Shaders.metallib: %s\n"
+                "Run `make` first and launch from the project root.\n",
                 error->localizedDescription()->utf8String());
         exit(1);
     }
 
-    // ── Compute pipeline: raytrace kernel ──────────────────────────────────
-    auto* raytraceFn = library->newFunction(
-        NS::String::string("raytrace", NS::StringEncoding::UTF8StringEncoding));
-
-    _computePipeline = _device->newComputePipelineState(raytraceFn, &error);
-    raytraceFn->release();
-    if (!_computePipeline) {
-        fprintf(stderr, "Failed to build compute pipeline: %s\n",
-                error->localizedDescription()->utf8String());
+    // Compute pipeline: raytrace kernel
+    auto* raytrace_fn = library->newFunction(NS::String::string("raytrace", NS::StringEncoding::UTF8StringEncoding));
+    compute_pipeline_ = device_->newComputePipelineState(raytrace_fn, &error);
+    raytrace_fn->release();
+    if (!compute_pipeline_) {
+        fprintf(stderr, "Failed to build compute pipeline: %s\n", error->localizedDescription()->utf8String());
         exit(1);
     }
 
-    // ── Render pipeline: blit compute texture → screen ────────────────────
-    auto* vertFn = library->newFunction(
-        NS::String::string("blit_vertex", NS::StringEncoding::UTF8StringEncoding));
-    auto* fragFn = library->newFunction(
-        NS::String::string("blit_fragment", NS::StringEncoding::UTF8StringEncoding));
+    // Render pipeline: blit compute texture → screen
+    auto* vert_fn = library->newFunction(NS::String::string("blit_vertex",   NS::StringEncoding::UTF8StringEncoding));
+    auto* frag_fn = library->newFunction(NS::String::string("blit_fragment", NS::StringEncoding::UTF8StringEncoding));
 
     auto* desc = MTL::RenderPipelineDescriptor::alloc()->init();
-    desc->setVertexFunction(vertFn);
-    desc->setFragmentFunction(fragFn);
+    desc->setVertexFunction(vert_fn);
+    desc->setFragmentFunction(frag_fn);
     desc->colorAttachments()->object(0)->setPixelFormat(MTL::PixelFormatBGRA8Unorm_sRGB);
 
-    _renderPipeline = _device->newRenderPipelineState(desc, &error);
-    if (!_renderPipeline) {
-        fprintf(stderr, "Failed to build render pipeline: %s\n",
-                error->localizedDescription()->utf8String());
+    render_pipeline_ = device_->newRenderPipelineState(desc, &error);
+    if (!render_pipeline_) {
+        fprintf(stderr, "Failed to build render pipeline: %s\n", error->localizedDescription()->utf8String());
         exit(1);
     }
 
-    vertFn->release();
-    fragFn->release();
+    vert_fn->release();
+    frag_fn->release();
     desc->release();
     library->release();
 }
 
-void Renderer::buildTexture(uint32_t width, uint32_t height) {
-    if (_renderTexture) _renderTexture->release();
+void Renderer::build_texture(uint32_t width, uint32_t height) {
+    if (render_texture_) render_texture_->release();
 
     auto* desc = MTL::TextureDescriptor::texture2DDescriptor(
         MTL::PixelFormatRGBA16Float, width, height, false);
     desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
     desc->setStorageMode(MTL::StorageModePrivate);
 
-    _renderTexture  = _device->newTexture(desc);
-    _textureWidth   = width;
-    _textureHeight  = height;
+    render_texture_  = device_->newTexture(desc);
+    texture_width_   = width;
+    texture_height_  = height;
 }
 
-void Renderer::buildCameraBuffer(uint32_t width, uint32_t height) {
-    if (!_cameraBuffer)
-        _cameraBuffer = _device->newBuffer(sizeof(CameraData),
-                                           MTL::ResourceStorageModeShared);
+void Renderer::build_camera_buffer(uint32_t width, uint32_t height) {
+    if (!camera_buffer_)
+        camera_buffer_ = device_->newBuffer(sizeof(CameraData), MTL::ResourceStorageModeShared);
 
-    // Camera: slightly above the equatorial plane, looking at the black hole
-    simd_float3 position = {  0.0f,  3.0f, -15.0f };
-    simd_float3 target   = {  0.0f,  0.0f,   0.0f };
-    simd_float3 worldUp  = {  0.0f,  1.0f,   0.0f };
+    float cx = radius_ * cosf(elevation_) * sinf(azimuth_);
+    float cy = radius_ * sinf(elevation_);
+    float cz = -radius_ * cosf(elevation_) * cosf(azimuth_);
 
-    simd_float3 forward  = simd_normalize(target - position);
-    simd_float3 right    = simd_normalize(simd_cross(forward, worldUp));
-    simd_float3 up       = simd_cross(right, forward);
+    simd_float3 position = { cx, cy, cz };
+    simd_float3 target   = { 0.0f, 0.0f, 0.0f };
+    simd_float3 world_up = { 0.0f, 1.0f, 0.0f };
 
-    float fov         = M_PI / 3.0f;  // 60° vertical
-    float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+    simd_float3 forward = simd_normalize(target - position);
+    simd_float3 right   = simd_normalize(simd_cross(forward, world_up));
+    simd_float3 up      = simd_cross(right, forward);
 
-    auto* cam     = static_cast<CameraData*>(_cameraBuffer->contents());
-    cam->position = { position.x, position.y, position.z, 0.0f };
-    cam->forward  = { forward.x,  forward.y,  forward.z,  fov  };
-    cam->right    = { right.x,    right.y,    right.z,    aspectRatio };
-    cam->up       = { up.x,       up.y,       up.z,       0.0f };
+    float fov          = (float)M_PI / 3.0f;
+    float aspect_ratio = static_cast<float>(width) / static_cast<float>(height);
+
+    auto* cam      = static_cast<CameraData*>(camera_buffer_->contents());
+    cam->position  = { cx,        cy,        cz,        0.0f         };
+    cam->forward   = { forward.x, forward.y, forward.z, fov          };
+    cam->right     = { right.x,   right.y,   right.z,   aspect_ratio };
+    cam->up        = { up.x,      up.y,      up.z,      0.0f         };
+}
+
+void Renderer::update_orbit(float dx, float dy) {
+    constexpr float k_sens     = 0.005f;
+    constexpr float k_elev_min = -(float)M_PI / 2.0f + 0.05f;
+    constexpr float k_elev_max =  (float)M_PI / 2.0f - 0.05f;
+
+    azimuth_   += dx * k_sens;
+    elevation_ -= dy * k_sens;
+    elevation_  = std::clamp(elevation_, k_elev_min, k_elev_max);
+
+    if      (azimuth_ >  (float)M_PI) azimuth_ -= 2.0f * (float)M_PI;
+    else if (azimuth_ < -(float)M_PI) azimuth_ += 2.0f * (float)M_PI;
+
+    build_camera_buffer(texture_width_, texture_height_);
 }
 
 void Renderer::draw(MTK::View* view) {
@@ -115,38 +126,35 @@ void Renderer::draw(MTK::View* view) {
     auto* drawable = view->currentDrawable();
     if (!drawable) { pool->release(); return; }
 
-    // Rebuild resources if the window was resized
     uint32_t w = drawable->texture()->width();
     uint32_t h = drawable->texture()->height();
-    if (w != _textureWidth || h != _textureHeight) {
-        buildTexture(w, h);
-        buildCameraBuffer(w, h);
+    if (w != texture_width_ || h != texture_height_) {
+        build_texture(w, h);
+        build_camera_buffer(w, h);
     }
 
-    auto* cmd = _commandQueue->commandBuffer();
+    auto* cmd = command_queue_->commandBuffer();
 
-    // ── Compute pass: raytrace into _renderTexture ─────────────────────────
+    // Compute pass: raytrace into render_texture_
     {
         auto* enc = cmd->computeCommandEncoder();
-        enc->setComputePipelineState(_computePipeline);
-        enc->setTexture(_renderTexture, 0);
-        enc->setBuffer(_cameraBuffer, 0, 0);
+        enc->setComputePipelineState(compute_pipeline_);
+        enc->setTexture(render_texture_, 0);
+        enc->setBuffer(camera_buffer_, 0, 0);
 
-        // 16×16 threadgroups; dispatchThreads handles non-power-of-two sizes
         MTL::Size threadgroup { 16, 16, 1 };
         MTL::Size grid        { w,  h,  1 };
         enc->dispatchThreads(grid, threadgroup);
         enc->endEncoding();
     }
 
-    // ── Render pass: blit _renderTexture to the drawable ──────────────────
+    // Render pass: blit render_texture_ to the drawable
     {
         auto* rpd = view->currentRenderPassDescriptor();
         auto* enc = cmd->renderCommandEncoder(rpd);
-        enc->setRenderPipelineState(_renderPipeline);
-        enc->setFragmentTexture(_renderTexture, 0);
-        enc->drawPrimitives(MTL::PrimitiveTypeTriangle,
-                            NS::UInteger(0), NS::UInteger(3));
+        enc->setRenderPipelineState(render_pipeline_);
+        enc->setFragmentTexture(render_texture_, 0);
+        enc->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
         enc->endEncoding();
     }
 

@@ -28,34 +28,23 @@
 
 #include "MTLLibrary.hpp"
 
-namespace MTL
-{
-class FunctionHandle : public NS::Referencing<FunctionHandle>
-{
+namespace MTL {
+class FunctionHandle : public NS::Referencing<FunctionHandle> {
 public:
     MTL::FunctionType functionType() const;
 
-    NS::String*       name() const;
+    NS::String* name() const;
 
-    class Device*     device() const;
+    class Device* device() const;
 };
 
-}
+} // namespace MTL
 
 // property: functionType
-_MTL_INLINE MTL::FunctionType MTL::FunctionHandle::functionType() const
-{
-    return Object::sendMessage<MTL::FunctionType>(this, _MTL_PRIVATE_SEL(functionType));
-}
+_MTL_INLINE MTL::FunctionType MTL::FunctionHandle::functionType() const { return Object::sendMessage<MTL::FunctionType>(this, _MTL_PRIVATE_SEL(functionType)); }
 
 // property: name
-_MTL_INLINE NS::String* MTL::FunctionHandle::name() const
-{
-    return Object::sendMessage<NS::String*>(this, _MTL_PRIVATE_SEL(name));
-}
+_MTL_INLINE NS::String* MTL::FunctionHandle::name() const { return Object::sendMessage<NS::String*>(this, _MTL_PRIVATE_SEL(name)); }
 
 // property: device
-_MTL_INLINE MTL::Device* MTL::FunctionHandle::device() const
-{
-    return Object::sendMessage<MTL::Device*>(this, _MTL_PRIVATE_SEL(device));
-}
+_MTL_INLINE MTL::Device* MTL::FunctionHandle::device() const { return Object::sendMessage<MTL::Device*>(this, _MTL_PRIVATE_SEL(device)); }

@@ -7,8 +7,10 @@ CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -I metal-cpp -I metal-cpp-extensions -I 
 LDFLAGS  = -framework Metal -framework MetalKit -framework AppKit \
            -framework Foundation -framework QuartzCore
 
-SRCS = $(SRC)/main.cpp $(SRC)/Renderer.cpp
-OBJS = $(patsubst $(SRC)/%.cpp, $(BUILD)/%.o, $(SRCS))
+SRCS    = $(SRC)/main.cpp $(SRC)/renderer.cpp
+MM_SRCS = $(SRC)/input_handler.mm
+OBJS    = $(patsubst $(SRC)/%.cpp, $(BUILD)/%.o, $(SRCS)) \
+          $(patsubst $(SRC)/%.mm,  $(BUILD)/%.o, $(MM_SRCS))
 
 METAL_SRCS = $(wildcard $(SHADERS)/*.metal)
 METAL_AIRS = $(patsubst $(SHADERS)/%.metal, $(BUILD)/%.air, $(METAL_SRCS))
@@ -34,6 +36,10 @@ $(BUILD)/Shaders.metallib: $(METAL_AIRS)
 # Compile C++ sources
 $(BUILD)/%.o: $(SRC)/%.cpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# Compile Objective-C++ sources
+$(BUILD)/%.o: $(SRC)/%.mm | $(BUILD)
+	$(CXX) $(CXXFLAGS) -fobjc-arc -c $< -o $@
 
 # Link final binary
 $(BUILD)/BlackHole: $(OBJS)
