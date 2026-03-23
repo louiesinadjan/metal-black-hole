@@ -40,25 +40,147 @@ static float star_hash(float2 p) {
     return fract(sin(dot(p, float2(127.1f, 311.7f))) * 43758.5453f);
 }
 
+// Stellar color from spectral type: blue giant → yellow → orange → red dwarf
+static float3 star_tint(float2 cell) {
+    float t = star_hash(cell + float2(3.7f, 8.1f));  // independent rng
+    if      (t < 0.08f) return float3(0.7f, 0.8f,  1.0f);  // blue-white giant
+    else if (t < 0.25f) return float3(0.9f, 0.95f, 1.0f);  // white
+    else if (t < 0.60f) return float3(1.0f, 0.97f, 0.85f); // yellow (sun-like)
+    else if (t < 0.85f) return float3(1.0f, 0.75f, 0.45f); // orange
+    else                return float3(1.0f, 0.45f, 0.25f);  // red dwarf
+}
+
+// Stars at one grid scale; threshold controls density
+static float3 star_layer(float2 uv, float scale, float threshold, float size) {
+    float2 cell  = floor(uv * scale);
+    float2 local = fract(uv * scale) - 0.5f;
+    float  rng   = star_hash(cell);
+    if (rng <= threshold) return float3(0.0f);
+    float brightness = star_hash(cell + 0.5f) * 1.4f + 0.6f;
+    float spot = max(0.0f, 1.0f - length(local) * size);
+    return star_tint(cell) * (spot * brightness);
+}
+
+// Milky Way band: faint nebula glow along a tilted great circle.
+// We use a rotated coordinate so the "galaxy plane" is tilted ~60° from equator.
+static float milky_way(float3 dir) {
+    // Rotate dir into galactic frame (tilt ~60° around z-axis)
+    const float ca = 0.5f, sa = 0.866f;  // cos/sin 60°
+    float3 g = float3(dir.x * ca - dir.y * sa,
+                      dir.x * sa + dir.y * ca,
+                      dir.z);
+    // Latitude in galactic frame — glow peaks at b=0 (the galactic plane)
+    float b    = asin(clamp(g.y, -1.0f, 1.0f));
+    float band = exp(-b * b * 18.0f);  // gaussian falloff in latitude
+
+    // Longitude-varying density using low-frequency noise
+    float lon = atan2(g.x, g.z) / (2.0f * M_PI_F) + 0.5f;
+    float2 np = float2(lon * 4.0f, 0.5f);
+    float2 i  = floor(np);
+    float2 f  = fract(np);
+    float2 u  = f * f * (3.0f - 2.0f * f);
+    float  n  = mix(mix(star_hash(i),               star_hash(i + float2(1,0)), u.x),
+                    mix(star_hash(i+float2(0,1)),    star_hash(i + float2(1,1)), u.x), u.y);
+
+    return band * (0.4f + 0.6f * n);
+}
+
+// Distant galaxies: sparse grid of faint elliptical/spiral blobs
+static float3 galaxy_field(float2 uv) {
+    const float scale = 32.0f;
+    float2 cell  = floor(uv * scale);
+    float2 local = fract(uv * scale) - 0.5f;
+
+    float rng = star_hash(cell);
+    if (rng < 0.93f) return float3(0.0f);
+
+    // Random center offset within cell
+    float2 center = float2(star_hash(cell + float2(0.1f, 0.0f)),
+                           star_hash(cell + float2(0.2f, 0.0f))) - 0.5f;
+    float2 d = local - center * 0.8f;
+
+    // Random orientation and aspect ratio → elliptical shape
+    float angle  = star_hash(cell + float2(0.3f, 0.0f)) * M_PI_F;
+    float aspect = 0.3f + star_hash(cell + float2(0.4f, 0.0f)) * 0.5f;
+    float ca = cos(angle), sa = sin(angle);
+    float2 rot = float2(d.x * ca - d.y * sa, d.x * sa + d.y * ca);
+    rot.y /= aspect;
+    float dist2 = dot(rot, rot);
+
+    float peak   = 0.04f + star_hash(cell + float2(0.5f, 0.0f)) * 0.06f;
+    float blob   = exp(-dist2 * 80.0f) * peak;
+
+    // Color: spiral (blue-white) or elliptical (warm yellow-white)
+    float3 color = (star_hash(cell + float2(0.6f, 0.0f)) < 0.4f)
+                   ? float3(0.75f, 0.85f, 1.0f)    // spiral — blue-white
+                   : float3(1.0f,  0.92f, 0.75f);  // elliptical — warm
+
+    return color * blob;
+}
+
+// Emission nebulae: 3 soft colored clouds at fixed sky positions
+static float3 nebula_clouds(float3 dir, float2 uv) {
+    float3 result = float3(0.0f);
+
+    // Anchor directions, colors, angular-size parameter k, peak brightness
+    const float3 anchors[3] = {
+        normalize(float3( 0.6f,  0.5f, -0.6f)),
+        normalize(float3(-0.7f, -0.3f,  0.5f)),
+        normalize(float3( 0.1f, -0.6f, -0.8f)),
+    };
+    const float3 colors[3] = {
+        float3(0.05f, 0.18f, 0.25f),  // blue-green (oxygen emission)
+        float3(0.22f, 0.05f, 0.10f),  // red-pink   (hydrogen-alpha)
+        float3(0.12f, 0.06f, 0.20f),  // purple     (mixed)
+    };
+    const float k[3]    = { 38.0f, 50.0f, 32.0f };
+    const float peak[3] = { 0.55f, 0.50f, 0.45f };
+
+    for (int i = 0; i < 3; ++i) {
+        float fade = exp((dot(dir, anchors[i]) - 1.0f) * k[i]);
+        if (fade < 0.001f) continue;
+
+        // 2-octave fbm warp for organic edge — reuse uv noise
+        float2 np = uv * 3.0f + float2(float(i) * 1.7f, 0.0f);
+        float2 ni = floor(np);
+        float2 nf = fract(np);
+        float2 nu = nf * nf * (3.0f - 2.0f * nf);
+        float  n1 = mix(mix(star_hash(ni),               star_hash(ni+float2(1,0)), nu.x),
+                        mix(star_hash(ni+float2(0,1)),    star_hash(ni+float2(1,1)), nu.x), nu.y);
+        np *= 2.1f;
+        ni = floor(np); nf = fract(np); nu = nf*nf*(3.0f-2.0f*nf);
+        float  n2 = mix(mix(star_hash(ni),               star_hash(ni+float2(1,0)), nu.x),
+                        mix(star_hash(ni+float2(0,1)),    star_hash(ni+float2(1,1)), nu.x), nu.y);
+        float  warp = 0.55f * n1 + 0.45f * n2;
+
+        result += colors[i] * fade * warp * peak[i];
+    }
+    return result;
+}
+
 static float4 skyColor(float3 dir) {
     // Spherical UV from escape direction
-    float phi   = atan2(dir.x, dir.z);             // azimuth  [-π, π]
-    float theta = asin(clamp(dir.y, -1.0f, 1.0f)); // elevation [-π/2, π/2]
+    float phi   = atan2(dir.x, dir.z);
+    float theta = asin(clamp(dir.y, -1.0f, 1.0f));
     float2 uv   = float2(phi / (2.0f * M_PI_F) + 0.5f,
                          theta / M_PI_F + 0.5f);
 
-    // Procedural star field: grid of cells, one potential star per cell
-    float2 cell  = floor(uv * 256.0f);
-    float2 local = fract(uv * 256.0f) - 0.5f;
-    float  rng   = star_hash(cell);
-    float  star  = (rng > 0.994f) ? max(0.0f, 1.0f - length(local) * 8.0f) : 0.0f;
-    star *= star_hash(cell + 0.5f) * 1.5f + 0.5f;  // vary brightness
+    // Two star layers: bright foreground + faint dense background
+    float3 stars  = star_layer(uv, 256.0f, 0.994f, 8.0f);
+           stars += star_layer(uv, 512.0f, 0.988f, 12.0f) * 0.35f;
 
-    float up = max(0.0f, dir.y) * 0.1f;
-    return float4(0.005f + star,
-                  0.005f + star,
-                  0.02f  + star + up,
-                  1.0f);
+    // Milky Way band
+    float  mw       = milky_way(dir);
+    float3 mw_color = float3(0.12f, 0.10f, 0.22f) * mw * 0.6f;
+
+    // Nebulae and galaxies
+    float3 nebulae  = nebula_clouds(dir, uv);
+    float3 galaxies = galaxy_field(uv);
+
+    // Deep space background
+    float3 sky = float3(0.003f, 0.004f, 0.012f);
+
+    return float4(sky + mw_color + nebulae + galaxies + stars, 1.0f);
 }
 
 // Turbulence noise — bilinear value noise + 4-octave fbm
