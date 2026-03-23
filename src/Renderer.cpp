@@ -83,9 +83,8 @@ void Renderer::build_pipelines() {
         return pso;
     };
     bloom_threshold_pipeline_ = build_compute("bloom_threshold");
-    bloom_blur_h_pipeline_ = build_compute("bloom_blur_h");
-    bloom_blur_v_pipeline_ = build_compute("bloom_blur_v");
-
+    bloom_blur_h_pipeline_    = build_compute("bloom_blur_h");
+    bloom_blur_v_pipeline_    = build_compute("bloom_blur_v");
     // Render pipeline: blit compute texture → screen
     auto* vert_fn = library->newFunction(NS::String::string("blit_vertex", NS::StringEncoding::UTF8StringEncoding));
     auto* frag_fn = library->newFunction(NS::String::string("blit_fragment", NS::StringEncoding::UTF8StringEncoding));
@@ -214,9 +213,13 @@ void Renderer::draw(MTK::View* view) {
         build_camera_buffer(w, h);
     }
 
-    // Advance frame counter and write it into camera.up.w for the jitter
+    // Advance frame counters: frame_count_ resets on camera move (TAA),
+    // anim_frame_ never resets so animations run continuously.
     ++frame_count_;
-    static_cast<CameraData*>(camera_buffer_->contents())->up.w = static_cast<float>(frame_count_);
+    ++anim_frame_;
+    auto* cam  = static_cast<CameraData*>(camera_buffer_->contents());
+    cam->up.w       = static_cast<float>(frame_count_);
+    cam->position.w = static_cast<float>(anim_frame_);  // accretion streams animation time
 
     auto* cmd = command_queue_->commandBuffer();
 
@@ -285,7 +288,7 @@ void Renderer::draw(MTK::View* view) {
         auto* rpd = view->currentRenderPassDescriptor();
         auto* enc = cmd->renderCommandEncoder(rpd);
         enc->setRenderPipelineState(render_pipeline_);
-        enc->setFragmentTexture(accum_texture_, 0);
+        enc->setFragmentTexture(accum_texture_,   0);
         enc->setFragmentTexture(bloom_a_texture_, 1);
         enc->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
         enc->endEncoding();

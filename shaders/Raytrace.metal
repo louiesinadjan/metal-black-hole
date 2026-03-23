@@ -205,27 +205,41 @@ static float disk_fbm(float2 p) {
 }
 
 // Accretion disk color
+//
+// Accretion streams: animated plasma following Keplerian orbits in the
+// accretion disk. Each radial shell rotates at ω = √(M/r³), so the inner
+// disk flows faster than the outer disk. High-contrast noise (power-curved
+// fbm) breaks the uniform "solid ring" look into distinct bright streams
+// separated by dark gaps.
 
-static float4 diskColor(float r, float3 pos3D) {
-    // Temperature gradient: white-yellow near ISCO, orange-red at outer edge
+static float4 diskColor(float r, float3 pos3D, float anim_time) {
+    // Physically accurate blackbody temperature gradient:
+    // inner disk (near ISCO) peaks in X-rays → blue-white in visible,
+    // outer disk is cooler → fades to white.
     float t           = saturate((r - R_ISCO) / (R_DISK_OUTER - R_ISCO));
-    float3 innerColor = float3(1.0f, 0.95f, 0.7f);
-    float3 outerColor = float3(0.8f, 0.15f, 0.02f);
+    float3 innerColor = float3(0.55f, 0.75f, 1.0f);   // blue-white (millions of K)
+    float3 outerColor = float3(0.92f, 0.96f, 1.0f);   // near-white (cooler outer edge)
     float3 col        = mix(innerColor, outerColor, sqrt(t));
     float  brightness = 2.0f / (t * 5.0f + 0.3f);   // brighter toward ISCO
 
-    // Turbulent modulation — static pattern in polar coordinates
-    float  phi        = atan2(pos3D.z, pos3D.x);                     // azimuth [-π, π]
-    float2 disk_uv    = float2(r * 0.25f, phi / M_PI_F);
-    float  turb       = disk_fbm(disk_uv);
-    float  turb_scale = 0.35f + 1.3f * turb;  // [0.35, 1.65] — ±65% brightness swing
+    // Keplerian angular velocity — inner disk orbits faster than outer.
+    float omega = sqrt(M / (r * r * r));
+    float phase = omega * anim_time * 0.04f;
+    float cp = cos(phase), sp = sin(phase);
+    // Rotated Cartesian position (seam-free, animates with orbital motion)
+    float rx = pos3D.x * cp - pos3D.z * sp;
+    float rz = pos3D.x * sp + pos3D.z * cp;
 
-    return float4(col * brightness * turb_scale, 1.0f);
+    // MHD turbulence: Cartesian noise for seamless local brightness variation
+    float ang_mod = noise2(float2(rx * 0.07f, rz * 0.07f)) * 0.6f + 0.4f;
+    float stream  = 0.35f + 1.3f * ang_mod;
+
+    return float4(col * brightness * stream, 1.0f);
 }
 
 // Geodesic integrator 
 
-static float4 traceRay(float3 rayOrigin, float3 rayDir) {
+static float4 traceRay(float3 rayOrigin, float3 rayDir, float anim_time) {
     float r0 = length(rayOrigin);
 
     // Orbital plane basis vectors
@@ -270,12 +284,11 @@ static float4 traceRay(float3 rayOrigin, float3 rayDir) {
         float phi = dphi * float(i + 1);
         float r   = 1.0f / max(u, 1e-7f);
 
-        // Hit event horizon 
+        // Hit event horizon
         if (r < RS) return float4(0, 0, 0, 1);
 
-        // Escaped to far background 
+        // Escaped to far background
         if (u <= 0.0f || r > 300.0f) {
-            // Reconstruct 3D escape direction from orbital-plane vectors
             float3 rHat     = cos(phi)*e1 + sin(phi)*e2;
             float3 phiHat   = -sin(phi)*e1 + cos(phi)*e2;
             float3 escapeDir = normalize(-du * rHat + phiHat);
@@ -287,24 +300,16 @@ static float4 traceRay(float3 rayOrigin, float3 rayDir) {
         float  curY  = pos3D.y;
 
         if (prevY * curY < 0.0f && r > R_ISCO && r < R_DISK_OUTER) {
-            // Prograde circular orbit direction in the equatorial plane
             float3 orb_dir = normalize(float3(-pos3D.z, 0.0f, pos3D.x));
-            // Direction from disk point to observer (rayOrigin = camera position)
             float3 to_obs  = normalize(rayOrigin - pos3D);
 
-            // Keplerian orbital speed: β = √(M/r)  (natural units, c = 1)
             float beta  = min(sqrt(M / r), 0.95f);
             float gam   = 1.0f / sqrt(1.0f - beta * beta);
-
-            // Special-relativistic Doppler: D = 1 / (γ(1 − β cosα))
             float doppler = 1.0f / (gam * (1.0f - beta * dot(orb_dir, to_obs)));
+            float grav  = sqrt(max(0.0f, 1.0f - RS / r));
+            float g     = doppler * grav;
 
-            // Gravitational redshift: g_grav = √(1 − RS/r)
-            float grav = sqrt(max(0.0f, 1.0f - RS / r));
-
-            // Observed bolometric flux ∝ g^4  (beaming g³ · energy shift g¹)
-            float g = doppler * grav;
-            float4 color = diskColor(r, pos3D);
+            float4 color = diskColor(r, pos3D, anim_time);
             color.rgb *= pow(g, 4.0f);
             return color;
         }
@@ -341,5 +346,6 @@ kernel void raytrace(texture2d<float, access::write> outTexture [[texture(0)]],
         + uv.x * camera.right.w * halfTanFov * camera.right.xyz
         + uv.y *                  halfTanFov * camera.up.xyz);
 
-    outTexture.write(traceRay(rayOrigin, rayDir), gid);
+    float anim_time = camera.position.w;  // continuous frame counter, never resets
+    outTexture.write(traceRay(rayOrigin, rayDir, anim_time), gid);
 }

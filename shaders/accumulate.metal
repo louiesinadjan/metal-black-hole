@@ -20,7 +20,9 @@ kernel void accumulate(
     if (gid.x >= new_frame.get_width() || gid.y >= new_frame.get_height()) return;
 
     float4 incoming = new_frame.read(gid);
-    float  alpha    = 1.0f / float(min(frame_count, 512u));
+    // Cap at 8 frames — enough to reduce noise without smearing the animated
+    // accretion streams (animated plasma following Keplerian orbits).
+    float  alpha    = 1.0f / float(min(frame_count, 8u));
     float4 blended  = mix(accum.read(gid), incoming, alpha);
     accum.write(blended, gid);
 }

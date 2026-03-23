@@ -34,9 +34,9 @@ static float3 aces(float3 x) {
     return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
-fragment float4 blit_fragment(BlitVertex         in    [[stage_in]],
-                               texture2d<float>  tex   [[texture(0)]],
-                               texture2d<float>  bloom [[texture(1)]]) {
+fragment float4 blit_fragment(BlitVertex        in    [[stage_in]],
+                               texture2d<float> tex   [[texture(0)]],
+                               texture2d<float> bloom [[texture(1)]]) {
     constexpr sampler s_near(filter::nearest, address::clamp_to_edge);
     constexpr sampler s_lin (filter::linear,  address::clamp_to_edge);
 

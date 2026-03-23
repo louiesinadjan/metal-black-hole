@@ -33,6 +33,7 @@ private:
     MTL::Buffer*               camera_buffer_             = nullptr;
 
     uint32_t frame_count_ = 0;
+    uint32_t anim_frame_  = 0;  // never resets — used for continuous animation
 
     uint32_t texture_width_  = 0;
     uint32_t texture_height_ = 0;
