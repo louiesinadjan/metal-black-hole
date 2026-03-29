@@ -12,11 +12,32 @@ $$\frac{d^2u}{d\varphi^2} = 3Mu^2 - u \qquad \left(u = \frac{1}{r},\ \varphi = \
 
 This is integrated with RK4 (step $d\varphi = 0.005$, up to 3000 iterations). At each step:
 
-- $r < R_S$ → event horizon reached, pixel is black
-- $r > 300$ → photon escaped, pixel takes a sky color based on exit direction
-- Sign change of the photon's $y$-coordinate within $[R_\text{ISCO},\ R_\text{disk}]$ → accretion disk intersection
+- $r < R_S$ → event horizon reached, any cloud accumulated in front is returned; otherwise pixel is black
+- $r > 300$ → photon escaped, cloud is composited over the sky color
+- $r \in [R_\text{ISCO},\ R_\text{disk}]$ → volumetric cloud sampling (see below)
 
-The accretion disk lies in the $y = 0$ equatorial plane. Its intrinsic color is a temperature gradient: white-yellow near the ISCO ($3R_S$), fading to orange-red at the outer edge ($12R_S$).
+### Volumetric cloud disk
+
+Rather than intersecting a thin equatorial plane, the renderer accumulates density along the geodesic path through a 3D gas cloud occupying $r \in [R_\text{ISCO},\ R_\text{disk}]$. At each integration step inside this region, the cloud density is sampled and composited front-to-back:
+
+$$C_\text{acc} \mathrel{+}= (1 - \alpha_\text{acc})\, d \cdot \text{color}(r) \cdot g^4$$
+$$\alpha_\text{acc} \mathrel{+}= (1 - \alpha_\text{acc})\, \text{opacity}(d)$$
+
+Integration stops early when $\alpha_\text{acc} > 0.98$ (fully opaque). The cloud density function has three components:
+
+**Radial envelope** — ramps up quickly from the ISCO then fades toward the outer edge:
+
+$$\rho_\text{radial} = \min(4t_r,\ 1) \cdot (1 - t_r)^2, \qquad t_r = \frac{r - R_\text{ISCO}}{R_\text{disk} - R_\text{ISCO}}$$
+
+**Vertical envelope** — Gaussian falloff with a flared scale height $H = 0.2 + 0.06r$:
+
+$$\rho_\text{vert} = \exp\!\left(-\frac{y^2}{H^2}\right)$$
+
+**Swirl noise** — the sampling position is Keplerian-rotated (inner gas faster than outer), then displaced by curl noise before the final FBM evaluation. For a scalar potential $n(\mathbf{p})$, the curl displacement is:
+
+$$\mathbf{F} = \left(\frac{\partial n}{\partial z},\ -\frac{\partial n}{\partial x}\right)$$
+
+$\mathbf{F}$ is always perpendicular to $\nabla n$, so it flows around iso-contours of $n$ in closed loops, producing circular swirls rather than arbitrary blobs.
 
 ### Observational effects
 
@@ -78,7 +99,7 @@ src/
   renderer.hpp/cpp  owns all Metal state; called once per frame
   shader_types.h    structs shared between C++ and Metal
 shaders/
-  raytrace.metal    compute kernel: geodesic integrator, one thread per pixel
+  raytrace.metal    compute kernel: geodesic integrator + volumetric cloud disk, one thread per pixel
   accumulate.metal  compute kernel: TAA running-average blend
   blit.metal        vertex + fragment shaders: full-screen triangle
 metal-cpp/          Apple's header-only C++ bindings for Metal

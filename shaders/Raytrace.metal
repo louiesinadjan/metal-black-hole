@@ -5,7 +5,7 @@
 //
 // Physics overview:
 //   A photon in Schwarzschild spacetime obeys the orbit equation
-//       d²u/dφ² = 3·M·u² − u       (u = 1/r, φ = orbital angle)
+//       d^2u/dphi^2 = 3*M*u^2 - u       (u = 1/r, phi = orbital angle)
 //   integrated with RK4. The photon path is confined to the orbital plane
 //   defined by the camera ray and the black hole. We track the 3D position
 //   within that plane to detect intersections with the accretion disk
@@ -30,9 +30,9 @@ static float halton(uint i, uint base) {
 // Constants
 
 constant float RS            = 1.0;          // Schwarzschild radius
-constant float M             = RS / 2.0;     // Mass  (RS = 2GM/c², G=c=1)
+constant float M             = RS / 2.0;     // Mass  (RS = 2GM/c^2, G=c=1)
 constant float R_ISCO        = 3.0 * RS;     // Innermost stable circular orbit
-constant float R_DISK_OUTER  = 12.0 * RS;    // Outer edge of accretion disk
+constant float R_DISK_OUTER  = 20.0 * RS;    // Outer edge of accretion disk
 
 // Background sky + stars
 
@@ -40,7 +40,7 @@ static float star_hash(float2 p) {
     return fract(sin(dot(p, float2(127.1f, 311.7f))) * 43758.5453f);
 }
 
-// Stellar color from spectral type: blue giant → yellow → orange → red dwarf
+// Stellar color from spectral type: blue giant -> yellow -> orange -> red dwarf
 static float3 star_tint(float2 cell) {
     float t = star_hash(cell + float2(3.7f, 8.1f));  // independent rng
     if      (t < 0.08f) return float3(0.7f, 0.8f,  1.0f);  // blue-white giant
@@ -62,14 +62,14 @@ static float3 star_layer(float2 uv, float scale, float threshold, float size) {
 }
 
 // Milky Way band: faint nebula glow along a tilted great circle.
-// We use a rotated coordinate so the "galaxy plane" is tilted ~60° from equator.
+// We use a rotated coordinate so the "galaxy plane" is tilted ~60deg from equator.
 static float milky_way(float3 dir) {
-    // Rotate dir into galactic frame (tilt ~60° around z-axis)
-    const float ca = 0.5f, sa = 0.866f;  // cos/sin 60°
+    // Rotate dir into galactic frame (tilt ~60deg around z-axis)
+    const float ca = 0.5f, sa = 0.866f;  // cos/sin 60deg
     float3 g = float3(dir.x * ca - dir.y * sa,
                       dir.x * sa + dir.y * ca,
                       dir.z);
-    // Latitude in galactic frame — glow peaks at b=0 (the galactic plane)
+    // Latitude in galactic frame -glow peaks at b=0 (the galactic plane)
     float b    = asin(clamp(g.y, -1.0f, 1.0f));
     float band = exp(-b * b * 18.0f);  // gaussian falloff in latitude
 
@@ -99,7 +99,7 @@ static float3 galaxy_field(float2 uv) {
                            star_hash(cell + float2(0.2f, 0.0f))) - 0.5f;
     float2 d = local - center * 0.8f;
 
-    // Random orientation and aspect ratio → elliptical shape
+    // Random orientation and aspect ratio -> elliptical shape
     float angle  = star_hash(cell + float2(0.3f, 0.0f)) * M_PI_F;
     float aspect = 0.3f + star_hash(cell + float2(0.4f, 0.0f)) * 0.5f;
     float ca = cos(angle), sa = sin(angle);
@@ -112,8 +112,8 @@ static float3 galaxy_field(float2 uv) {
 
     // Color: spiral (blue-white) or elliptical (warm yellow-white)
     float3 color = (star_hash(cell + float2(0.6f, 0.0f)) < 0.4f)
-                   ? float3(0.75f, 0.85f, 1.0f)    // spiral — blue-white
-                   : float3(1.0f,  0.92f, 0.75f);  // elliptical — warm
+                   ? float3(0.75f, 0.85f, 1.0f)    // spiral -blue-white
+                   : float3(1.0f,  0.92f, 0.75f);  // elliptical -warm
 
     return color * blob;
 }
@@ -140,7 +140,7 @@ static float3 nebula_clouds(float3 dir, float2 uv) {
         float fade = exp((dot(dir, anchors[i]) - 1.0f) * k[i]);
         if (fade < 0.001f) continue;
 
-        // 2-octave fbm warp for organic edge — reuse uv noise
+        // 2-octave fbm warp for organic edge -reuse uv noise
         float2 np = uv * 3.0f + float2(float(i) * 1.7f, 0.0f);
         float2 ni = floor(np);
         float2 nf = fract(np);
@@ -183,7 +183,7 @@ static float4 skyColor(float3 dir) {
     return float4(sky + mw_color + nebulae + galaxies + stars, 1.0f);
 }
 
-// Turbulence noise — bilinear value noise + 4-octave fbm
+// Turbulence noise -bilinear value noise + 4-octave fbm
 // Used to modulate disk brightness with MHD-like density fluctuations.
 
 static float noise2(float2 p) {
@@ -201,40 +201,87 @@ static float disk_fbm(float2 p) {
         p  = p * 2.1f + float2(1.7f, 9.2f);  // offset avoids lattice alignment
         a *= 0.5f;
     }
-    return v;  // ≈ [0, 1]
+    return v;  // ~ [0, 1]
 }
 
-// Accretion disk color
+// Volumetric cloud disk
 //
-// Accretion streams: animated plasma following Keplerian orbits in the
-// accretion disk. Each radial shell rotates at ω = √(M/r³), so the inner
-// disk flows faster than the outer disk. High-contrast noise (power-curved
-// fbm) breaks the uniform "solid ring" look into distinct bright streams
-// separated by dark gaps.
+// Replaces the thin equatorial plane with a 3D gas cloud. Density is sampled
+// at every geodesic step inside the disk region and accumulated via alpha
+// compositing, giving real vertical thickness, depth, and Keplerian swirls.
 
-static float4 diskColor(float r, float3 pos3D, float anim_time) {
-    // Physically accurate blackbody temperature gradient:
-    // inner disk (near ISCO) peaks in X-rays → blue-white in visible,
-    // outer disk is cooler → fades to white.
-    float t           = saturate((r - R_ISCO) / (R_DISK_OUTER - R_ISCO));
-    float3 innerColor = float3(0.55f, 0.75f, 1.0f);   // blue-white (millions of K)
-    float3 outerColor = float3(0.92f, 0.96f, 1.0f);   // near-white (cooler outer edge)
-    float3 col        = mix(innerColor, outerColor, sqrt(t));
-    float  brightness = 2.0f / (t * 5.0f + 0.3f);   // brighter toward ISCO
+// Henyey-Greenstein phase function.
+//
+// Describes how likely a photon is to scatter in a given direction when
+// passing through a particle. cos_theta is the angle between the light
+// direction and the view direction.
+//   g > 0 ->forward scattering (bright when looking toward the light)
+//   g < 0 ->backward scattering (bright when looking away from light)
+//   g = 0 ->isotropic (uniform in all directions)
+static float hg(float cos_theta, float g) {
+    float g2 = g * g;
+    return (1.0f - g2) / (4.0f * M_PI_F * pow(1.0f + g2 - 2.0f * g * cos_theta, 1.5f));
+}
 
-    // Keplerian angular velocity — inner disk orbits faster than outer.
+// Double-lobed HG: blends a forward lobe (in-falling gas) and back lobe
+// (scattered light returning toward camera) for a richer appearance.
+static float double_hg(float cos_theta, float g_fwd, float g_bck, float weight) {
+    return weight * hg(cos_theta, g_fwd) + (1.0f - weight) * hg(cos_theta, g_bck);
+}
+
+// Base cloud colour: neutral blue-white tint -lighting drives the brightness
+static float3 cloud_color(float r) {
+    float  t     = saturate((r - R_ISCO) / (R_DISK_OUTER - R_ISCO));
+    float3 inner = float3(0.85f, 0.92f, 1.0f);   // blue-white
+    float3 outer = float3(0.25f, 0.35f, 0.55f);  // steel blue
+    return mix(inner, outer, pow(t, 0.25f));
+}
+
+// 3D cloud density: radial envelope x vertical falloff x Keplerian swirl noise
+static float cloud_density(float3 pos, float r, float anim_time) {
+    // Radial: quick ramp up from ISCO, gradual fade toward outer edge
+    float t_r        = saturate((r - R_ISCO) / (R_DISK_OUTER - R_ISCO));
+    float inner_ramp = saturate(t_r * 4.0f);          // reaches full density by ~25% of disk width
+    float outer_fade = pow(1.0f - t_r, 4.0f);          // falloff -still concentrates near ISCO but extends further
+    float radial     = inner_ramp * outer_fade;
+
+    // Vertical: flared scale height grows with r
+    float H        = 0.2f + 0.06f * r;
+    float vertical = exp(-pos.y * pos.y / (H * H));
+
+    // Quick out: skip noise evaluation if clearly outside vertical extent
+    if (vertical < 0.01f) return 0.0f;
+
+    // Keplerian rotation: inner gas orbits faster than outer
     float omega = sqrt(M / (r * r * r));
-    float phase = omega * anim_time * 0.04f;
+    float phase = omega * anim_time * 0.18f;
     float cp = cos(phase), sp = sin(phase);
-    // Rotated Cartesian position (seam-free, animates with orbital motion)
-    float rx = pos3D.x * cp - pos3D.z * sp;
-    float rz = pos3D.x * sp + pos3D.z * cp;
+    float rx = pos.x * cp - pos.z * sp;
+    float rz = pos.x * sp + pos.z * cp;
 
-    // MHD turbulence: Cartesian noise for seamless local brightness variation
-    float ang_mod = noise2(float2(rx * 0.07f, rz * 0.07f)) * 0.6f + 0.4f;
-    float stream  = 0.35f + 1.3f * ang_mod;
+    // Curl noise warping: displace sampling position along a rotational field.
+    //
+    // For any scalar potential n(x,z), the 2D curl is:
+    //   F = ( dn/dz, -dn/dx )
+    // This vector is always perpendicular to the gradient of n, so it flows
+    // *around* iso-contours of n in closed loops - producing circular swirls
+    // rather than the random blobs you get from displacing in Cartesian x/z.
+    //
+    // We approximate the partial derivatives numerically with a small epsilon:
+    //   dn/dz ~ (n(p + eps*z) - n(p - eps*z)) / 2*eps
+    //
+    // The resulting warp field has no divergence (it only rotates, never
+    // compresses or expands), which is what keeps the swirls visibly circular.
+    float2 p   = float2(rx * 0.15f, rz * 0.15f + pos.y * 0.4f);
+    float  eps = 0.15f;
+    float  dn_dz = noise2(p + float2(0, eps)) - noise2(p - float2(0, eps));
+    float  dn_dx = noise2(p + float2(eps, 0)) - noise2(p - float2(eps, 0));
+    float2 curl  = float2(dn_dz, -dn_dx);   // perpendicular to gradient ->circular flow
+    float2 p_warped = p + curl * 1.5f;
 
-    return float4(col * brightness * stream, 1.0f);
+    float noise = disk_fbm(p_warped);
+
+    return radial * vertical * pow(noise, 1.8f);
 }
 
 // Geodesic integrator 
@@ -243,7 +290,7 @@ static float4 traceRay(float3 rayOrigin, float3 rayDir, float anim_time) {
     float r0 = length(rayOrigin);
 
     // Orbital plane basis vectors
-    float3 e1   = normalize(rayOrigin);           // BH → camera (radial)
+    float3 e1   = normalize(rayOrigin);           // BH ->camera (radial)
     float3 Lvec = cross(rayOrigin, rayDir);        // angular momentum axis
     float  b    = length(Lvec);                    // impact parameter
 
@@ -254,16 +301,17 @@ static float4 traceRay(float3 rayOrigin, float3 rayDir, float anim_time) {
     }
 
     float3 eN = Lvec / b;            // orbital plane normal
-    float3 e2 = cross(eN, e1);       // tangential direction (φ increases here)
+    float3 e2 = cross(eN, e1);       // tangential direction (phi increases here)
 
-    // Initial orbit-equation state  [u = 1/r, du = du/dφ]
+    // Initial orbit-equation state  [u = 1/r, du = du/dphi]
     float u  = 1.0f / r0;
-    float du = -dot(rayDir, e1) / b; // sign: inward ray → u increasing
+    float du = -dot(rayDir, e1) / b; // sign: inward ray ->u increasing
 
     const float dphi    = 0.005f;
     const int   maxIter = 3000;
 
-    float prevY = rayOrigin.y;   // for equatorial-plane crossing detection
+    float3 cloud_acc   = float3(0.0f);
+    float  cloud_alpha = 0.0f;
 
     for (int i = 0; i < maxIter; i++) {
         float u1  = u,                du1  = du;
@@ -284,41 +332,59 @@ static float4 traceRay(float3 rayOrigin, float3 rayDir, float anim_time) {
         float phi = dphi * float(i + 1);
         float r   = 1.0f / max(u, 1e-7f);
 
-        // Hit event horizon
-        if (r < RS) return float4(0, 0, 0, 1);
+        // Hit event horizon -return any cloud accumulated in front
+        if (r < RS) return float4(cloud_acc, 1.0f);
 
-        // Escaped to far background
+        // Escaped to far background -blend cloud over sky
         if (u <= 0.0f || r > 300.0f) {
-            float3 rHat     = cos(phi)*e1 + sin(phi)*e2;
-            float3 phiHat   = -sin(phi)*e1 + cos(phi)*e2;
+            float3 rHat      = cos(phi)*e1 + sin(phi)*e2;
+            float3 phiHat    = -sin(phi)*e1 + cos(phi)*e2;
             float3 escapeDir = normalize(-du * rHat + phiHat);
-            return skyColor(escapeDir);
+            float4 bg        = skyColor(escapeDir);
+            return float4(cloud_acc + (1.0f - cloud_alpha) * bg.rgb, 1.0f);
         }
 
-        // Accretion disk: equatorial-plane (y = 0) crossing
-        float3 pos3D = r * (cos(phi)*e1 + sin(phi)*e2);
-        float  curY  = pos3D.y;
+        // Volumetric cloud accumulation inside disk region
+        if (r > R_ISCO && r < R_DISK_OUTER) {
+            float3 pos3D = r * (cos(phi)*e1 + sin(phi)*e2);
+            float  d     = cloud_density(pos3D, r, anim_time);
+            if (d > 0.002f) {
+                float3 orb_dir = normalize(float3(-pos3D.z, 0.0f, pos3D.x));
+                float3 to_obs  = normalize(rayOrigin - pos3D);
+                float beta     = min(sqrt(M / r), 0.95f);
+                float gam      = 1.0f / sqrt(1.0f - beta * beta);
+                float doppler  = 1.0f / (gam * (1.0f - beta * dot(orb_dir, to_obs)));
+                float grav     = sqrt(max(0.0f, 1.0f - RS / r));
+                float g        = doppler * grav;
 
-        if (prevY * curY < 0.0f && r > R_ISCO && r < R_DISK_OUTER) {
-            float3 orb_dir = normalize(float3(-pos3D.z, 0.0f, pos3D.x));
-            float3 to_obs  = normalize(rayOrigin - pos3D);
+                // HG phase: BH is the light source, camera is the viewer
+                float3 Ld       = normalize(-pos3D);          // toward BH at origin
+                float3 Vd       = -rayDir;                    // toward camera
+                float  cos_t    = dot(Ld, Vd);
+                float  phase    = double_hg(cos_t, 0.6f, -0.3f, 0.75f);
 
-            float beta  = min(sqrt(M / r), 0.95f);
-            float gam   = 1.0f / sqrt(1.0f - beta * beta);
-            float doppler = 1.0f / (gam * (1.0f - beta * dot(orb_dir, to_obs)));
-            float grav  = sqrt(max(0.0f, 1.0f - RS / r));
-            float g     = doppler * grav;
+                // Inverse square falloff from BH
+                float  dist2    = max(dot(pos3D, pos3D), 0.1f);
+                float  atten    = 1.0f / (dist2 * 0.08f);
 
-            float4 color = diskColor(r, pos3D, anim_time);
-            color.rgb *= pow(g, 4.0f);
-            return color;
+                // g^2 rather than g^4: volumetric clouds integrate many samples so the
+                // relativistic asymmetry is less extreme than a thin emitting disk
+                float phase_floor = max(phase, 0.04f);  // prevent completely black backlit regions
+                float ms          = 0.06f * (1.0f - cloud_alpha);  // fake multiple scattering
+
+                float step_opacity = saturate(d * dphi * r * 7.0f);
+                float transmit     = 1.0f - cloud_alpha;
+                cloud_acc   += transmit * cloud_color(r) * d * phase_floor * atten * pow(g, 2.0f);
+                cloud_acc   += transmit * cloud_color(r) * d * ms;
+                cloud_alpha += transmit * step_opacity;
+
+                if (cloud_alpha > 0.98f) return float4(cloud_acc, 1.0f);
+            }
         }
-
-        prevY = curY;
     }
 
     // Photon captured (too many iterations)
-    return float4(0, 0, 0, 1);
+    return float4(cloud_acc, 1.0f);
 }
 
 // Compute kernel 
